@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>GraphQL Frontend</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <style>
+        /* Add some basic styling */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .form-section {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input,
+        select,
+        button {
+            padding: 8px;
+        }
+
+        .result {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    Hello! Store data on EigenDA or Avail. This is made in 2 days, please bear with some guiding instructions.
+    <ul>
+        <li>Blob IDs are stored in an in-memory object on the backend for quick iteration.
+    </ul>
+
+    <div class="form-section">
+        <h2>Store Blob</h2>
+        Enter any message in data and click Store after choosing the DA layer.
+        <ul>
+            <li>EigenDA will quickly respond as the request will be processing.
+            <li>Avail request will take time as it'll wait for it to be included in a block.
+        </ul>
+        <label for="dataInput">Data:</label>
+        <input type="text" id="dataInput">
+        <label for="daSelect">DA:</label>
+        <select id="daSelect">
+            <option value="EIGEN_DA">EIGEN_DA</option>
+            <option value="AVAIL">AVAIL</option>
+        </select>
+        <button onclick="storeBlob()">Store</button>
+        <div id="storeResult" class="result"></div>
+    </div>
+
+    <div class="form-section">
+        <h2>Get Blob Status</h2>
+        Store will respond back with an ID. Copy the ID (without the brackets), and enter it to get blob status and
+        pick the same DA.
+        <ul>
+            <li>EigenDA will show "PROCESSING" for some time before finalizing.
+            <li>Avail shows finalized because Store responds only when data is stored.
+            <li>Once status is "FINALIZED", move to the next API.
+        </ul>
+        <label for="statusIdInput">ID:</label>
+        <input type="text" id="statusIdInput">
+        <label for="statusDaSelect">DA:</label>
+        <select id="statusDaSelect">
+            <option value="EIGEN_DA">EIGEN_DA</option>
+            <option value="AVAIL">AVAIL</option>
+        </select>
+        <button onclick="getBlobStatus()">Get Status</button>
+        <div id="statusResult" class="result"></div>
+    </div>
+
+    <div class="form-section">
+        <h2>Get Blob Data</h2>
+        Enter the same ID to get blob data.
+        <ul>
+            <li>If it's not finalized, it will return
+                error or fail silently.
+        </ul>
+        <label for="dataIdInput">ID:</label>
+        <input type="text" id="dataIdInput">
+        <button onclick="getBlobData()">Get Data</button>
+        <div id="dataResult" class="result"></div>
+    </div>
+
+    <script>
+        const API_URL = '/';
+
+        async function fetchGraphQL(query, variables = {}) {
+            try {
+                const response = await axios.post(API_URL, {
+                    query,
+                    variables,
+                });
+                console.log(response);
+                return response.data;
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                return {};
+            }
+        }
+
+        async function storeBlob() {
+            document.getElementById('storeResult').textContent = ''; // Clearing the text area
+
+            const data = document.getElementById('dataInput').value;
+            const da = document.getElementById('daSelect').value;
+            const query = `mutation ($data: String!, $da: Da!) {
+                storeBlob(data: $data, da: $da)
+            }`;
+
+            const result = await fetchGraphQL(query, { data, da });
+            document.getElementById('storeResult').textContent = JSON.stringify(result.data.storeBlob);
+        }
+
+        async function getBlobStatus() {
+            document.getElementById('statusResult').textContent = ''; // Clearing the text area
+
+            const id = document.getElementById('statusIdInput').value.split(',').map(Number);
+            const da = document.getElementById('statusDaSelect').value;
+            const query = `query ($id: [Int!]!, $da: Da!) {
+                getBlobStatus(id: $id, da: $da) {
+                    status
+                    hash
+                    index
+                }
+            }`;
+
+            const result = await fetchGraphQL(query, { id, da });
+            console.log(result);
+            document.getElementById('statusResult').textContent = JSON.stringify(result.data.getBlobStatus);
+        }
+
+        async function getBlobData() {
+            document.getElementById('dataResult').textContent = ''; // Clearing the text area
+
+            const id = document.getElementById('dataIdInput').value.split(',').map(Number);
+            const query = `query ($id: [Int!]!) {
+                getBlobData(id: $id)
+            }`;
+
+            const result = await fetchGraphQL(query, { id });
+            console.log(result);
+            document.getElementById('dataResult').textContent = result.data.getBlobData;
+        }
+    </script>
+
+
+
+</body>
+
+</html>

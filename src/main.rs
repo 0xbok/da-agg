@@ -2,10 +2,10 @@ mod model;
 mod routes;
 
 use async_graphql::{EmptySubscription, Schema};
-use axum::{extract::Extension, routing::get, Router, Server};
+use axum::{extract::Extension, http::StatusCode, response::Html, routing::get, Router, Server};
 
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::{collections::HashMap, fs};
 use tokio::sync::RwLock;
 
 use sha2::{Digest, Sha256};
@@ -31,6 +31,13 @@ struct Data {
 
 struct ApiContext {
     map: SharedMap,
+}
+
+async fn index_html() -> Result<Html<String>, (StatusCode, &'static str)> {
+    match fs::read_to_string("static/index.html") {
+        Ok(contents) => Ok(Html(contents)),
+        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "Could not read file")),
+    }
 }
 
 use model::{MutationRoot, QueryRoot};
@@ -64,7 +71,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .data(ApiContext { map })
         .finish();
     let app = Router::new()
-        .route("/", get(graphql_playground).post(graphql_handler))
+        .route("/", get(index_html).post(graphql_handler))
+        .route("/playground", get(graphql_playground).post(graphql_handler))
         .route("/health", get(health))
         .layer(Extension(schema));
 
