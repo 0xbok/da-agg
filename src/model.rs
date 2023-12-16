@@ -7,7 +7,7 @@ use crate::{
         disperser_client::DisperserClient, BlobStatusRequest, DisperseBlobReply,
         DisperseBlobRequest, RetrieveBlobRequest, SecurityParams,
     },
-    AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
+    hash_data, ApiContext, Avail, Data, EigenDA, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
 };
 
 use avail_subxt::{
@@ -20,7 +20,7 @@ use avail_subxt::{
     avail::{AppUncheckedExtrinsic, Pair},
     build_client,
     primitives::AvailExtrinsicParams,
-    Call, Opts,
+    Call,
 };
 
 use sp_core::{Pair as _, H256};
@@ -36,8 +36,8 @@ pub enum DA {
 #[derive(Serialize, Deserialize, Clone)]
 struct BlobStatus {
     status: String,
-    batch_header_hash: Vec<u8>,
-    blob_index: u32,
+    hash: Vec<u8>,
+    index: u32,
 }
 
 #[Object]
@@ -46,13 +46,20 @@ impl BlobStatus {
         &self.status
     }
 
-    async fn batch_header_hash(&self) -> &Vec<u8> {
-        &self.batch_header_hash
+    async fn hash(&self) -> &Vec<u8> {
+        &self.hash
     }
 
-    async fn blob_index(&self) -> &u32 {
-        &self.blob_index
+    async fn index(&self) -> &u32 {
+        &self.index
     }
+}
+
+fn concatenate_slices(slice1: &[u8], slice2: &[u8]) -> Vec<u8> {
+    let mut concatenated = Vec::with_capacity(slice1.len() + slice2.len());
+    concatenated.extend_from_slice(slice1);
+    concatenated.extend_from_slice(slice2);
+    concatenated
 }
 
 pub(crate) type ServiceSchema = Schema<QueryRoot, MutationRoot, EmptySubscription>;
@@ -61,60 +68,142 @@ pub(crate) struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
-    async fn get_blob_status(&self, _ctx: &Context<'_>, id: Vec<u8>, da: DA) -> BlobStatus {
+    async fn get_blob_status(&self, ctx: &Context<'_>, id: [u8; 32], da: DA) -> BlobStatus {
+        let api_context = ctx.data_unchecked::<ApiContext>();
         match da {
             DA::EigenDA => {
-                let request = BlobStatusRequest { request_id: id };
+                let mut map = api_context.map.write().await;
+                let data = map.get(&id);
+                match data {
+                    None => BlobStatus {
+                        status: "Not found".to_owned(),
+                        hash: vec![],
+                        index: 0,
+                    },
+                    Some(value) => match &value.eigen_da {
+                        Some(eigen_da) => {
+                            if eigen_da.status == *"FINALIZED" {
+                                return BlobStatus {
+                                    status: eigen_da.status.clone(),
+                                    hash: eigen_da.hash.clone().unwrap(),
+                                    index: eigen_da.index.unwrap(),
+                                };
+                            }
+                            let request_id = eigen_da.request_id.as_ref().unwrap();
 
-                let mut client = DisperserClient::connect(EIGEN_SERVER)
-                    .await
-                    .map_err(|e| {
-                        Status::internal(format!("Failed to connect to external service: {}", e))
-                    })
-                    .unwrap();
+                            let request = BlobStatusRequest {
+                                request_id: request_id.clone(),
+                            };
 
-                let response = client
-                    .get_blob_status(request)
-                    .await
-                    .map_err(|e| {
-                        Status::internal(format!(
-                            "Failed to send request to external service: {}",
-                            e
-                        ))
-                    })
-                    .unwrap();
+                            let mut client = DisperserClient::connect(EIGEN_SERVER)
+                                .await
+                                .map_err(|e| {
+                                    Status::internal(format!(
+                                        "Failed to connect to external service: {}",
+                                        e
+                                    ))
+                                })
+                                .unwrap();
 
-                let response = response.into_inner();
+                            let response = client
+                                .get_blob_status(request)
+                                .await
+                                .map_err(|e| {
+                                    Status::internal(format!(
+                                        "Failed to send request to external service: {}",
+                                        e
+                                    ))
+                                })
+                                .unwrap();
 
-                let status = response.status();
+                            let response = response.into_inner();
 
-                let info = response
-                    .info
-                    .unwrap_or_default()
-                    .blob_verification_proof
-                    .unwrap_or_default();
-                BlobStatus {
-                    status: status.as_str_name().into(),
-                    batch_header_hash: info.batch_metadata.unwrap_or_default().batch_header_hash,
-                    blob_index: info.blob_index,
+                            let status = response.status();
+
+                            let info = response
+                                .info
+                                .unwrap_or_default()
+                                .blob_verification_proof
+                                .unwrap_or_default();
+
+                            let hash = info.batch_metadata.unwrap_or_default().batch_header_hash;
+                            let index = info.blob_index;
+                            let value = Data {
+                                eigen_da: Some(EigenDA {
+                                    status: status.as_str_name().into(),
+                                    request_id: eigen_da.request_id.clone(),
+                                    hash: Some(hash.clone()),
+                                    index: Some(index),
+                                }),
+                                avail: None,
+                            };
+                            map.insert(id, value);
+                            BlobStatus {
+                                status: status.as_str_name().into(),
+                                hash,
+                                index,
+                            }
+                        }
+                        None => BlobStatus {
+                            status: "Try selecting avail".to_owned(),
+                            hash: vec![],
+                            index: 0,
+                        },
+                    },
                 }
             }
-            _ => panic!("not supported"),
+            DA::Avail => {
+                let map = api_context.map.read().await;
+                let data = map.get(&id);
+                match data {
+                    None => BlobStatus {
+                        status: "Not found".to_owned(),
+                        hash: vec![],
+                        index: 0,
+                    },
+                    Some(value) => match &value.avail {
+                        Some(_) => BlobStatus {
+                            status: "FINALIZED".to_owned(),
+                            hash: vec![],
+                            index: 0,
+                        },
+                        None => BlobStatus {
+                            status: "Not found".to_owned(),
+                            hash: vec![],
+                            index: 0,
+                        },
+                    },
+                }
+            }
         }
     }
 
     async fn get_blob_data(
         &self,
-        _ctx: &Context<'_>,
-        hash: Vec<u8>,
-        index: u32,
-        da: DA,
-    ) -> Vec<u8> {
-        match da {
-            DA::EigenDA => {
+        ctx: &Context<'_>,
+        id: [u8; 32], /*hash: Vec<u8>, index: u32*/
+    ) -> String {
+        let api_context = ctx.data_unchecked::<ApiContext>();
+        let map = api_context.map.read().await;
+        let value = map.get(&id);
+        match value {
+            None
+            | Some(Data {
+                eigen_da: None,
+                avail: None,
+            })
+            | Some(Data {
+                eigen_da: Some(_),
+                avail: Some(_),
+            }) => "Invalid Id".to_owned(),
+
+            Some(Data {
+                eigen_da: Some(eigen_da),
+                avail: None,
+            }) => {
                 let request = RetrieveBlobRequest {
-                    batch_header_hash: hash,
-                    blob_index: index,
+                    batch_header_hash: eigen_da.hash.clone().unwrap(),
+                    blob_index: eigen_da.index.unwrap(),
                 };
 
                 let mut client = DisperserClient::connect(EIGEN_SERVER)
@@ -137,12 +226,15 @@ impl QueryRoot {
                     .unwrap();
 
                 let response = response.into_inner();
-                response.data
+                String::from_utf8(response.data).unwrap()
             }
-            DA::Avail => {
+            Some(Data {
+                eigen_da: None,
+                avail: Some(avail),
+            }) => {
                 let client = build_client(AVAIL_SERVER, true).await.unwrap();
 
-                let hash: [u8; 32] = hash.try_into().ok().unwrap();
+                let hash: [u8; 32] = avail.hash.clone().unwrap().try_into().ok().unwrap();
 
                 let submitted_block = client
                     .rpc()
@@ -155,7 +247,7 @@ impl QueryRoot {
                     .block
                     .extrinsics
                     .into_iter()
-                    .nth(index as usize)
+                    .nth(avail.index.unwrap() as usize)
                     .map(|chain_block_ext| {
                         AppUncheckedExtrinsic::try_from(chain_block_ext)
                             .map(|ext| ext.function)
@@ -165,8 +257,10 @@ impl QueryRoot {
                     .unwrap();
 
                 match x {
-                    Call::DataAvailability(DaCall::submit_data { data }) => data.0,
-                    _ => vec![],
+                    Call::DataAvailability(DaCall::submit_data { data }) => {
+                        String::from_utf8(data.0).unwrap()
+                    }
+                    _ => "".to_owned(),
                 }
             }
         }
@@ -177,9 +271,9 @@ pub(crate) struct MutationRoot;
 
 #[Object]
 impl MutationRoot {
-    async fn store_blob(&self, _ctx: &Context<'_>, data: Vec<u8>, da: DA) -> Vec<u8> {
-        dbg!(&data);
-        // let api_context = ctx.data_unchecked::<ApiContext>();
+    async fn store_blob(&self, ctx: &Context<'_>, data: String, da: DA) -> [u8; 32] {
+        let data = data.into_bytes();
+        let api_context = ctx.data_unchecked::<ApiContext>();
         match da {
             DA::EigenDA => {
                 let request = DisperseBlobRequest {
@@ -210,7 +304,19 @@ impl MutationRoot {
                     .unwrap();
 
                 let response: DisperseBlobReply = response.into_inner();
-                response.request_id
+                let mut map = api_context.map.write().await;
+                let key = hash_data(&response.request_id);
+                let v = Data {
+                    eigen_da: Some(EigenDA {
+                        status: "Processing".to_owned(),
+                        request_id: Some(response.request_id.clone()),
+                        hash: None,
+                        index: None,
+                    }),
+                    avail: None,
+                };
+                map.insert(key, v);
+                key
             }
             DA::Avail => {
                 let client = build_client(AVAIL_SERVER, true).await.unwrap();
@@ -232,9 +338,25 @@ impl MutationRoot {
                     .await
                     .unwrap();
 
+                let mut map = api_context.map.write().await;
+                let block_hash = h.block_hash();
+                let hash = block_hash.as_bytes();
+                let index = h.extrinsic_index().to_le_bytes();
+                let key = concatenate_slices(hash, &index);
+                let key = hash_data(&key);
+                map.insert(
+                    key,
+                    Data {
+                        eigen_da: None,
+                        avail: Some(Avail {
+                            hash: Some(block_hash.as_bytes().to_vec()),
+                            index: Some(h.extrinsic_index()),
+                        }),
+                    },
+                );
                 dbg!(&h.extrinsic_index());
                 dbg!(&h.block_hash());
-                h.block_hash().as_fixed_bytes().into()
+                key
             }
         }
     }
