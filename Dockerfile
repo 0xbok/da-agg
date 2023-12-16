@@ -1,5 +1,5 @@
 # Use an official Rust image as the base image
-FROM rust:1.74 as builder
+FROM rust:1.74-slim as builder
 
 # Install protobuf
 RUN apt-get update && apt-get install -y protobuf-compiler
@@ -12,14 +12,14 @@ WORKDIR /da
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./build.rs ./build.rs
-COPY ./lib ./lib
+COPY ./disperser.proto ./disperser.proto
 COPY ./src ./src
 
 # Build your application
 RUN cargo build --release
 
 # Runtime stage
-FROM rust:1.74
+FROM rust:1.74-slim
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from the builder stage

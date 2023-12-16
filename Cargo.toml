@@ -16,7 +16,6 @@ tonic = { version = "0.10.2", features = ["transport","tls","tls-roots","tls-web
 avail-subxt = { git = "https://github.com/availproject/avail.git", rev = "d438abe92f22d0cbc8d0520d1f6d18d79c61aaf4" }
 sp-core = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0", default-features = false }
 subxt = { version = "0.29" }
-sp-keyring = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0" }
 sha2 = "0.10.8"
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
