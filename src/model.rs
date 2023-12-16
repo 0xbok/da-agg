@@ -7,13 +7,30 @@ use crate::{
         disperser_client::DisperserClient, BlobStatusRequest, DisperseBlobReply,
         DisperseBlobRequest, RetrieveBlobRequest, SecurityParams,
     },
-    EIGEN_SERVER,
+    AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
 };
+
+use avail_subxt::{
+    api::{
+        self,
+        runtime_types::{
+            bounded_collections::bounded_vec::BoundedVec, da_control::pallet::Call as DaCall,
+        },
+    },
+    avail::{AppUncheckedExtrinsic, Pair},
+    build_client,
+    primitives::AvailExtrinsicParams,
+    Call, Opts,
+};
+
+use sp_core::{Pair as _, H256};
+use subxt::tx::PairSigner;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
 pub enum DA {
     EigenDA,
-    Celestia,
+    Avail,
+    // hawk current pony echo horse belt drill ceiling film theory guitar mind
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -89,15 +106,15 @@ impl QueryRoot {
     async fn get_blob_data(
         &self,
         _ctx: &Context<'_>,
-        batch_header_hash: Vec<u8>,
-        blob_index: u32,
+        hash: Vec<u8>,
+        index: u32,
         da: DA,
     ) -> Vec<u8> {
         match da {
             DA::EigenDA => {
                 let request = RetrieveBlobRequest {
-                    batch_header_hash,
-                    blob_index,
+                    batch_header_hash: hash,
+                    blob_index: index,
                 };
 
                 let mut client = DisperserClient::connect(EIGEN_SERVER)
@@ -122,7 +139,36 @@ impl QueryRoot {
                 let response = response.into_inner();
                 response.data
             }
-            _ => panic!("not supported"),
+            DA::Avail => {
+                let client = build_client(AVAIL_SERVER, true).await.unwrap();
+
+                let hash: [u8; 32] = hash.try_into().ok().unwrap();
+
+                let submitted_block = client
+                    .rpc()
+                    .block(Some(H256::from(hash)))
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+                let x = submitted_block
+                    .block
+                    .extrinsics
+                    .into_iter()
+                    .nth(index as usize)
+                    .map(|chain_block_ext| {
+                        AppUncheckedExtrinsic::try_from(chain_block_ext)
+                            .map(|ext| ext.function)
+                            .ok()
+                    })
+                    .unwrap()
+                    .unwrap();
+
+                match x {
+                    Call::DataAvailability(DaCall::submit_data { data }) => data.0,
+                    _ => vec![],
+                }
+            }
         }
     }
 }
@@ -166,8 +212,30 @@ impl MutationRoot {
                 let response: DisperseBlobReply = response.into_inner();
                 response.request_id
             }
-            // "Celestia" => {}
-            _ => "Not Supported".into(),
+            DA::Avail => {
+                let client = build_client(AVAIL_SERVER, true).await.unwrap();
+                let pair = Pair::from_string_with_seed(AVAIL_SEED, None).unwrap();
+                let signer = PairSigner::new(pair.0);
+
+                let data_transfer = api::tx()
+                    .data_availability()
+                    .submit_data(BoundedVec(data.clone()));
+                let extrinsic_params = AvailExtrinsicParams::new_with_app_id(1.into());
+
+                println!("Sending example data...");
+                let h = client
+                    .tx()
+                    .sign_and_submit_then_watch(&data_transfer, &signer, extrinsic_params)
+                    .await
+                    .unwrap()
+                    .wait_for_finalized_success()
+                    .await
+                    .unwrap();
+
+                dbg!(&h.extrinsic_index());
+                dbg!(&h.block_hash());
+                h.block_hash().as_fixed_bytes().into()
+            }
         }
     }
 }

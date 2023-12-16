@@ -11,8 +11,20 @@ async-graphql-axum = "6.0.11"
 axum = "0.6.20"
 prost = "0.12.3"
 serde = "1.0.193"
-tokio = {version="1.35.0", features=['full']}
+tokio = { version="1.35.0", features=['full'] }
 tonic = { version = "0.10.2", features = ["transport","tls","tls-roots","tls-webpki-roots"] }
+avail-subxt = { git = "https://github.com/availproject/avail.git", rev = "d438abe92f22d0cbc8d0520d1f6d18d79c61aaf4" }
+sp-core = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0", default-features = false }
+subxt = { version = "0.29" }
+sp-keyring = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0" }
+
+# Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
+[patch.crates-io]
+sp-core = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0" }
+sp-io = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0" }
+sp-runtime = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0" }
+sp-std = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0" }
+sp-core-hashing = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v1.0.0" }
 
 [build-dependencies]
 tonic-build = "0.10.2"

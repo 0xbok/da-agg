@@ -17,6 +17,8 @@ pub mod disperser {
 #[derive(Debug, Default)]
 pub struct MyDisperser {}
 const EIGEN_SERVER: &str = "https://disperser-goerli.eigenda.xyz:443";
+const AVAIL_SERVER: &str = "wss://goldberg.avail.tools:443/ws";
+const AVAIL_SEED: &str = "hawk current pony echo horse belt drill ceiling film theory guitar mind";
 
 // struct ApiContext {
 //     eigen_client: DisperserClient<Channel>,
