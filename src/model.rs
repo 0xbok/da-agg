@@ -28,8 +28,8 @@ use subxt::tx::PairSigner;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
 pub enum DA {
-    EigenDA,
     Avail,
+    EigenDA,
     // hawk current pony echo horse belt drill ceiling film theory guitar mind
 }
 
@@ -68,112 +68,109 @@ pub(crate) struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
-    async fn get_blob_status(&self, ctx: &Context<'_>, id: [u8; 32], da: DA) -> BlobStatus {
+    async fn get_blob_status(&self, ctx: &Context<'_>, id: [u8; 32]) -> BlobStatus {
         let api_context = ctx.data_unchecked::<ApiContext>();
-        match da {
-            DA::EigenDA => {
-                let mut map = api_context.map.write().await;
-                let data = map.get(&id);
-                match data {
-                    None => BlobStatus {
-                        status: "Not found".to_owned(),
-                        hash: vec![],
-                        index: 0,
-                    },
-                    Some(value) => match &value.eigen_da {
-                        Some(eigen_da) => {
-                            if eigen_da.status == *"FINALIZED" {
-                                return BlobStatus {
-                                    status: eigen_da.status.clone(),
-                                    hash: eigen_da.hash.clone().unwrap(),
-                                    index: eigen_da.index.unwrap(),
-                                };
-                            }
-                            let request_id = eigen_da.request_id.as_ref().unwrap();
+        let map = api_context.map.read().await;
+        let data = map.get(&id);
 
-                            let request = BlobStatusRequest {
-                                request_id: request_id.clone(),
-                            };
+        if data.is_none() {
+            return BlobStatus {
+                status: "Not found".to_owned(),
+                hash: vec![],
+                index: 0,
+            };
+        }
 
-                            let mut client = DisperserClient::connect(EIGEN_SERVER)
-                                .await
-                                .map_err(|e| {
-                                    Status::internal(format!(
-                                        "Failed to connect to external service: {}",
-                                        e
-                                    ))
-                                })
-                                .unwrap();
-
-                            let response = client
-                                .get_blob_status(request)
-                                .await
-                                .map_err(|e| {
-                                    Status::internal(format!(
-                                        "Failed to send request to external service: {}",
-                                        e
-                                    ))
-                                })
-                                .unwrap();
-
-                            let response = response.into_inner();
-
-                            let status = response.status();
-
-                            let info = response
-                                .info
-                                .unwrap_or_default()
-                                .blob_verification_proof
-                                .unwrap_or_default();
-
-                            let hash = info.batch_metadata.unwrap_or_default().batch_header_hash;
-                            let index = info.blob_index;
-                            let value = Data {
-                                eigen_da: Some(EigenDA {
-                                    status: status.as_str_name().into(),
-                                    request_id: eigen_da.request_id.clone(),
-                                    hash: Some(hash.clone()),
-                                    index: Some(index),
-                                }),
-                                avail: None,
-                            };
-                            map.insert(id, value);
-                            BlobStatus {
-                                status: status.as_str_name().into(),
-                                hash,
-                                index,
-                            }
-                        }
-                        None => BlobStatus {
-                            status: "Try selecting avail".to_owned(),
-                            hash: vec![],
-                            index: 0,
-                        },
-                    },
-                }
+        let data = data.unwrap().clone();
+        drop(map);
+        match data {
+            Data {
+                eigen_da: None,
+                avail: None,
             }
-            DA::Avail => {
-                let map = api_context.map.read().await;
-                let data = map.get(&id);
-                match data {
-                    None => BlobStatus {
-                        status: "Not found".to_owned(),
-                        hash: vec![],
-                        index: 0,
-                    },
-                    Some(value) => match &value.avail {
-                        Some(_) => BlobStatus {
-                            status: "FINALIZED".to_owned(),
-                            hash: vec![],
-                            index: 0,
-                        },
-                        None => BlobStatus {
-                            status: "Not found".to_owned(),
-                            hash: vec![],
-                            index: 0,
-                        },
-                    },
+            | Data {
+                eigen_da: Some(_),
+                avail: Some(_),
+            } => {
+                return BlobStatus {
+                    status: "Not found".to_owned(),
+                    hash: vec![],
+                    index: 0,
+                };
+            }
+            Data {
+                eigen_da: None,
+                avail: Some(_),
+            } => {
+                return BlobStatus {
+                    status: "FINALIZED".to_owned(),
+                    hash: vec![],
+                    index: 0,
+                };
+            }
+            Data {
+                eigen_da: Some(eigen_da),
+                avail: None,
+            } => {
+                if eigen_da.status == *"FINALIZED" {
+                    return BlobStatus {
+                        status: eigen_da.status.clone(),
+                        hash: eigen_da.hash.clone().unwrap(),
+                        index: eigen_da.index.unwrap(),
+                    };
                 }
+                let request_id = eigen_da.request_id.as_ref().unwrap();
+
+                let request = BlobStatusRequest {
+                    request_id: request_id.clone(),
+                };
+
+                let mut client = DisperserClient::connect(EIGEN_SERVER)
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to connect to external service: {}", e))
+                    })
+                    .unwrap();
+
+                let response = client
+                    .get_blob_status(request)
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!(
+                            "Failed to send request to external service: {}",
+                            e
+                        ))
+                    })
+                    .unwrap();
+
+                let response = response.into_inner();
+
+                let status = response.status();
+
+                let info = response
+                    .info
+                    .unwrap_or_default()
+                    .blob_verification_proof
+                    .unwrap_or_default();
+
+                let hash = info.batch_metadata.unwrap_or_default().batch_header_hash;
+                let index = info.blob_index;
+                let value = Data {
+                    eigen_da: Some(EigenDA {
+                        status: status.as_str_name().into(),
+                        request_id: eigen_da.request_id.clone(),
+                        hash: Some(hash.clone()),
+                        index: Some(index),
+                    }),
+                    avail: None,
+                };
+                let mut map = api_context.map.write().await;
+                map.insert(id, value);
+                return BlobStatus {
+                    status: status.as_str_name().into(),
+                    hash,
+                    index,
+                };
             }
         }
     }
@@ -328,7 +325,6 @@ impl MutationRoot {
                     .submit_data(BoundedVec(data.clone()));
                 let extrinsic_params = AvailExtrinsicParams::new_with_app_id(1.into());
 
-                println!("Sending example data...");
                 let h = client
                     .tx()
                     .sign_and_submit_then_watch(&data_transfer, &signer, extrinsic_params)

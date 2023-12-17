@@ -30,6 +30,13 @@
 
         .result {
             margin-top: 10px;
+            white-space: pre-wrap;
+            min-height: 50px;
+            /* Adjust this value as needed */
+            border: 1px solid #ddd;
+            /* Optional: adds a border to the result area */
+            padding: 5px;
+            /* Optional: adds some padding inside the result area */
         }
     </style>
 </head>
@@ -44,7 +51,7 @@
         <h2>Store Blob</h2>
         Enter any message in data and click Store after choosing the DA layer.
         <ul>
-            <li>EigenDA will quickly respond as the request will be processing.
+            <li>EigenDA will quickly respond due to async processing.
             <li>Avail request will take time as it'll wait for it to be included in a block.
         </ul>
         <label for="dataInput">Data:</label>
@@ -61,8 +68,9 @@
 
     <div class="form-section">
         <h2>Get Blob Status</h2>
-        Store will respond back with an ID. Copy the ID using Copy button above, use the ID and the same DA layer to get
+        Store will respond back with an application-generated ID. Copy the ID using Copy button above, use it to get
         blob status.
+        <br />Application automatically routes the request to the correct DA layer.
         <ul>
             <li>EigenDA will show "PROCESSING" for some time before finalizing.
             <li>Avail shows finalized because Store responds only when data is stored.
@@ -70,11 +78,6 @@
         </ul>
         <label for="statusIdInput">ID:</label>
         <input type="text" id="statusIdInput">
-        <label for="statusDaSelect">DA:</label>
-        <select id="statusDaSelect">
-            <option value="EIGEN_DA">EIGEN_DA</option>
-            <option value="AVAIL">AVAIL</option>
-        </select>
         <button onclick="getBlobStatus()">Get Status</button>
         <div id="statusResult" class="result"></div>
     </div>
@@ -142,16 +145,15 @@
             document.getElementById('statusResult').textContent = ''; // Clearing the text area
 
             const id = document.getElementById('statusIdInput').value.split(',').map(Number);
-            const da = document.getElementById('statusDaSelect').value;
-            const query = `query ($id: [Int!]!, $da: Da!) {
-                getBlobStatus(id: $id, da: $da) {
+            const query = `query ($id: [Int!]!) {
+                getBlobStatus(id: $id) {
                     status
                     hash
                     index
                 }
             }`;
 
-            const result = await fetchGraphQL(query, { id, da });
+            const result = await fetchGraphQL(query, { id });
             console.log(result);
             document.getElementById('statusResult').textContent = JSON.stringify(result.data.getBlobStatus);
         }
