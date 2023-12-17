@@ -55,13 +55,14 @@
             <option value="AVAIL">AVAIL</option>
         </select>
         <button onclick="storeBlob()">Store</button>
+        <button class="copy-button" onclick="copyToClipboard('storeResult')">Copy ID</button>
         <div id="storeResult" class="result"></div>
     </div>
 
     <div class="form-section">
         <h2>Get Blob Status</h2>
-        Store will respond back with an ID. Copy the ID (without the brackets), and enter it to get blob status and
-        pick the same DA.
+        Store will respond back with an ID. Copy the ID using Copy button above, use the ID and the same DA layer to get
+        blob status.
         <ul>
             <li>EigenDA will show "PROCESSING" for some time before finalizing.
             <li>Avail shows finalized because Store responds only when data is stored.
@@ -119,6 +120,22 @@
 
             const result = await fetchGraphQL(query, { data, da });
             document.getElementById('storeResult').textContent = JSON.stringify(result.data.storeBlob);
+        }
+
+        function copyToClipboard(elementId) {
+            let text = document.getElementById(elementId).textContent;
+            try {
+                let parsed = JSON.parse(text);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    text = parsed.join(", "); // Join array elements with a comma if multiple IDs
+                }
+            } catch (err) {
+                console.error('Error parsing text for clipboard: ', err);
+            }
+            navigator.clipboard.writeText(text).then(() => {
+            }).catch(err => {
+                console.error('Error in copying text: ', err);
+            });
         }
 
         async function getBlobStatus() {
