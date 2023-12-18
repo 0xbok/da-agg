@@ -38,6 +38,32 @@
             padding: 5px;
             /* Optional: adds some padding inside the result area */
         }
+
+        .loading-dots span {
+            animation: blink 1.4s infinite both;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: .2;
+            }
+
+            20% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: .2;
+            }
+        }
     </style>
 </head>
 
@@ -58,8 +84,8 @@
         <input type="text" id="dataInput">
         <label for="daSelect">DA:</label>
         <select id="daSelect">
-            <option value="EIGEN_DA">EIGEN_DA</option>
             <option value="AVAIL">AVAIL</option>
+            <option value="EIGEN_DA">EIGEN_DA</option>
         </select>
         <button onclick="storeBlob()">Store</button>
         <button class="copy-button" onclick="copyToClipboard('storeResult')">Copy ID</button>
@@ -97,6 +123,8 @@
 
     <script>
         const API_URL = '/';
+        const loadingDotsHTML = '<div class="loading-dots"><span>█</span><span>█</span><span>█</span></div>';
+
 
         async function fetchGraphQL(query, variables = {}) {
             try {
@@ -114,6 +142,7 @@
 
         async function storeBlob() {
             document.getElementById('storeResult').textContent = ''; // Clearing the text area
+            document.getElementById('storeResult').innerHTML = loadingDotsHTML;
 
             const data = document.getElementById('dataInput').value;
             const da = document.getElementById('daSelect').value;
@@ -143,6 +172,7 @@
 
         async function getBlobStatus() {
             document.getElementById('statusResult').textContent = ''; // Clearing the text area
+            document.getElementById('statusResult').innerHTML = loadingDotsHTML; // Clearing the text area
 
             const id = document.getElementById('statusIdInput').value.split(',').map(Number);
             const query = `query ($id: [Int!]!) {
@@ -160,6 +190,7 @@
 
         async function getBlobData() {
             document.getElementById('dataResult').textContent = ''; // Clearing the text area
+            document.getElementById('dataResult').innerHTML = loadingDotsHTML; // Clearing the text area
 
             const id = document.getElementById('dataIdInput').value.split(',').map(Number);
             const query = `query ($id: [Int!]!) {
