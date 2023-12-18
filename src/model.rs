@@ -7,7 +7,7 @@ use crate::{
         disperser_client::DisperserClient, BlobStatusRequest, DisperseBlobReply,
         DisperseBlobRequest, RetrieveBlobRequest, SecurityParams,
     },
-    hash_data, ApiContext, Avail, Data, EigenDA, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
+    hash_data, ApiContext, AvailObj, Data, EigenObj, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
 };
 
 use avail_subxt::{
@@ -84,34 +84,12 @@ impl QueryRoot {
         let data = data.unwrap().clone();
         drop(map);
         match data {
-            Data {
-                eigen_da: None,
-                avail: None,
-            }
-            | Data {
-                eigen_da: Some(_),
-                avail: Some(_),
-            } => {
-                return BlobStatus {
-                    status: "Not found".to_owned(),
-                    hash: vec![],
-                    index: 0,
-                };
-            }
-            Data {
-                eigen_da: None,
-                avail: Some(_),
-            } => {
-                return BlobStatus {
-                    status: "FINALIZED".to_owned(),
-                    hash: vec![],
-                    index: 0,
-                };
-            }
-            Data {
-                eigen_da: Some(eigen_da),
-                avail: None,
-            } => {
+            Data::Avail(avail) => BlobStatus {
+                status: "FINALIZED".to_owned(),
+                hash: avail.hash.unwrap_or_default(),
+                index: avail.index.unwrap_or_default(),
+            },
+            Data::EigenDA(eigen_da) => {
                 if eigen_da.status == *"FINALIZED" {
                     return BlobStatus {
                         status: eigen_da.status.clone(),
@@ -119,7 +97,7 @@ impl QueryRoot {
                         index: eigen_da.index.unwrap(),
                     };
                 }
-                let request_id = eigen_da.request_id.as_ref().unwrap();
+                let request_id = eigen_da.request_id;
 
                 let request = BlobStatusRequest {
                     request_id: request_id.clone(),
@@ -155,49 +133,30 @@ impl QueryRoot {
 
                 let hash = info.batch_metadata.unwrap_or_default().batch_header_hash;
                 let index = info.blob_index;
-                let value = Data {
-                    eigen_da: Some(EigenDA {
-                        status: status.as_str_name().into(),
-                        request_id: eigen_da.request_id.clone(),
-                        hash: Some(hash.clone()),
-                        index: Some(index),
-                    }),
-                    avail: None,
-                };
+                let value = Data::EigenDA(EigenObj {
+                    status: status.as_str_name().into(),
+                    request_id,
+                    hash: Some(hash.clone()),
+                    index: Some(index),
+                });
                 let mut map = api_context.map.write().await;
                 map.insert(id, value);
-                return BlobStatus {
+                BlobStatus {
                     status: status.as_str_name().into(),
                     hash,
                     index,
-                };
+                }
             }
         }
     }
 
-    async fn get_blob_data(
-        &self,
-        ctx: &Context<'_>,
-        id: [u8; 32], /*hash: Vec<u8>, index: u32*/
-    ) -> String {
+    async fn get_blob_data(&self, ctx: &Context<'_>, id: [u8; 32]) -> String {
         let api_context = ctx.data_unchecked::<ApiContext>();
         let map = api_context.map.read().await;
         let value = map.get(&id);
         match value {
-            None
-            | Some(Data {
-                eigen_da: None,
-                avail: None,
-            })
-            | Some(Data {
-                eigen_da: Some(_),
-                avail: Some(_),
-            }) => "Invalid Id".to_owned(),
-
-            Some(Data {
-                eigen_da: Some(eigen_da),
-                avail: None,
-            }) => {
+            None => "Invalid Id".to_owned(),
+            Some(Data::EigenDA(eigen_da)) => {
                 let request = RetrieveBlobRequest {
                     batch_header_hash: eigen_da.hash.clone().unwrap(),
                     blob_index: eigen_da.index.unwrap(),
@@ -225,10 +184,7 @@ impl QueryRoot {
                 let response = response.into_inner();
                 String::from_utf8(response.data).unwrap()
             }
-            Some(Data {
-                eigen_da: None,
-                avail: Some(avail),
-            }) => {
+            Some(Data::Avail(avail)) => {
                 let client = build_client(AVAIL_SERVER, true).await.unwrap();
 
                 let hash: [u8; 32] = avail.hash.clone().unwrap().try_into().ok().unwrap();
@@ -303,15 +259,12 @@ impl MutationRoot {
                 let response: DisperseBlobReply = response.into_inner();
                 let mut map = api_context.map.write().await;
                 let key = hash_data(&response.request_id);
-                let v = Data {
-                    eigen_da: Some(EigenDA {
-                        status: "Processing".to_owned(),
-                        request_id: Some(response.request_id.clone()),
-                        hash: None,
-                        index: None,
-                    }),
-                    avail: None,
-                };
+                let v = Data::EigenDA(EigenObj {
+                    status: "Processing".to_owned(),
+                    request_id: response.request_id.clone(),
+                    hash: None,
+                    index: None,
+                });
                 map.insert(key, v);
                 key
             }
@@ -342,13 +295,10 @@ impl MutationRoot {
                 let key = hash_data(&key);
                 map.insert(
                     key,
-                    Data {
-                        eigen_da: None,
-                        avail: Some(Avail {
-                            hash: Some(block_hash.as_bytes().to_vec()),
-                            index: Some(h.extrinsic_index()),
-                        }),
-                    },
+                    Data::Avail(AvailObj {
+                        hash: Some(block_hash.as_bytes().to_vec()),
+                        index: Some(h.extrinsic_index()),
+                    }),
                 );
                 dbg!(&h.extrinsic_index());
                 dbg!(&h.block_hash());
