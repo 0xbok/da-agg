@@ -1,4 +1,11 @@
 use async_graphql::{Context, EmptySubscription, Enum, Object, Schema};
+use near_da_rpc::{
+    near::{
+        config::{Config, KeyType, Network},
+        Client,
+    },
+    Namespace,
+};
 use serde::{Deserialize, Serialize};
 use tonic::Status;
 
@@ -227,6 +234,17 @@ impl MutationRoot {
     async fn store_blob(&self, ctx: &Context<'_>, data: String, da: DA) -> [u8; 32] {
         let data = data.into_bytes();
         let api_context = ctx.data_unchecked::<ApiContext>();
+
+        let near_client = Client::new(&Config {
+            key: KeyType::SecretKey(
+                "515cb24a929b1cc49ad073ba598c30de72d7818a0c51260cd8e344740b4c6454".to_string(),
+                "ed25519:2eb2df3d009849174c889a70b6aec202fb1d79613621a14717041fc2f5f9342"
+                    .to_string(),
+            ),
+            network: Network::Testnet,
+            namespace: Namespace::new(0, 0),
+            contract: "".to_string(),
+        });
         match da {
             DA::EigenDA => {
                 let request = DisperseBlobRequest {
