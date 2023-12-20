@@ -4,7 +4,7 @@ use near_da_rpc::{
         config::{Config, KeyType, Network},
         Client,
     },
-    Namespace,
+    Blob, DataAvailability, Namespace,
 };
 use serde::{Deserialize, Serialize};
 use tonic::Status;
@@ -15,6 +15,7 @@ use crate::{
         DisperseBlobRequest, RetrieveBlobRequest, SecurityParams,
     },
     hash_data, ApiContext, AvailObj, Data, EigenObj, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
+    NEAR_ACCOUNT_ID, NEAR_SECRET,
 };
 
 use avail_subxt::{
@@ -37,7 +38,7 @@ use subxt::tx::PairSigner;
 pub enum DA {
     Avail,
     EigenDA,
-    // hawk current pony echo horse belt drill ceiling film theory guitar mind
+    Near, // hawk current pony echo horse belt drill ceiling film theory guitar mind
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -235,17 +236,20 @@ impl MutationRoot {
         let data = data.into_bytes();
         let api_context = ctx.data_unchecked::<ApiContext>();
 
-        let near_client = Client::new(&Config {
-            key: KeyType::SecretKey(
-                "515cb24a929b1cc49ad073ba598c30de72d7818a0c51260cd8e344740b4c6454".to_string(),
-                "ed25519:2eb2df3d009849174c889a70b6aec202fb1d79613621a14717041fc2f5f9342"
-                    .to_string(),
-            ),
-            network: Network::Testnet,
-            namespace: Namespace::new(0, 0),
-            contract: "".to_string(),
-        });
         match da {
+            DA::Near => {
+                let near_client = Client::new(&Config {
+                    key: KeyType::SecretKey(NEAR_ACCOUNT_ID.to_string(), NEAR_SECRET.to_string()),
+                    network: Network::Testnet,
+                    namespace: Namespace::new(1, 1),
+                    contract: NEAR_ACCOUNT_ID.to_string(),
+                });
+
+                let blobs = [Blob::new_v0(Namespace::new(0, 0), data)];
+
+                let response = near_client.submit(&blobs).await.unwrap();
+                response.0.as_bytes().try_into().unwrap()
+            }
             DA::EigenDA => {
                 let request = DisperseBlobRequest {
                     data,

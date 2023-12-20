@@ -58,6 +58,19 @@ pub struct MyDisperser {}
 const EIGEN_SERVER: &str = "https://disperser-goerli.eigenda.xyz:443";
 const AVAIL_SERVER: &str = "wss://goldberg.avail.tools:443/ws";
 const AVAIL_SEED: &str = "hawk current pony echo horse belt drill ceiling film theory guitar mind";
+const NEAR_ACCOUNT_ID: &str = "ca6adc06c986a448b72ee502782899f41cd7c68f94fda2dbe2b0ce1741a4d213";
+const NEAR_SECRET: &str = "ed25519:552x5ak2HHHMMNPC3oqTeR6SMrkPUsa2kBQPYtCm4Z7XfkHRTTgpKdyfXEgagnZeLoAbTyg7V7KXPSBw9wKLG7kv";
+
+/*
+--------------------  Access key info for account <daaggregator.testnet> ------------------
+
+Master Seed Phrase: thumb spot diary humble embark opinion defy dignity tuna will hurdle dutch
+Seed Phrase HD Path: m/44'/397'/0'
+Implicit Account ID: ca6adc06c986a448b72ee502782899f41cd7c68f94fda2dbe2b0ce1741a4d213
+Public Key: ed25519:Ed9rzox3FtLuqanDgiCvDihjTYYXbrwRiKd8AWRqp2pr
+SECRET KEYPAIR: ed25519:552x5ak2HHHMMNPC3oqTeR6SMrkPUsa2kBQPYtCm4Z7XfkHRTTgpKdyfXEgagnZeLoAbTyg7V7KXPSBw9wKLG7kv
+
+*/
 
 fn hash_data(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
