@@ -1,10 +1,12 @@
+use std::str::FromStr;
+
 use async_graphql::{Context, EmptySubscription, Enum, Object, Schema};
 use near_da_rpc::{
     near::{
         config::{Config, KeyType, Network},
         Client,
     },
-    Blob, DataAvailability, Namespace,
+    Blob, CryptoHash, DataAvailability, Namespace,
 };
 use serde::{Deserialize, Serialize};
 use tonic::Status;
@@ -14,8 +16,8 @@ use crate::{
         disperser_client::DisperserClient, BlobStatusRequest, DisperseBlobReply,
         DisperseBlobRequest, RetrieveBlobRequest, SecurityParams,
     },
-    hash_data, ApiContext, AvailObj, Data, EigenObj, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
-    NEAR_ACCOUNT_ID, NEAR_SECRET,
+    hash_data, ApiContext, AvailObj, Data, EigenObj, NearObj, AVAIL_SEED, AVAIL_SERVER,
+    EIGEN_SERVER, NEAR_ACCOUNT_ID, NEAR_SECRET,
 };
 
 use avail_subxt::{
@@ -92,6 +94,11 @@ impl QueryRoot {
         let data = data.unwrap().clone();
         drop(map);
         match data {
+            Data::Near(near) => BlobStatus {
+                status: "FINALIZED".to_owned(),
+                hash: near.hash.into(),
+                index: 0,
+            },
             Data::Avail(avail) => BlobStatus {
                 status: "FINALIZED".to_owned(),
                 hash: avail.hash.unwrap_or_default(),
@@ -164,6 +171,17 @@ impl QueryRoot {
         let value = map.get(&id);
         match value {
             None => "Invalid Id".to_owned(),
+            Some(Data::Near(near)) => {
+                let near_client = Client::new(&Config {
+                    key: KeyType::SecretKey(NEAR_ACCOUNT_ID.to_string(), NEAR_SECRET.to_string()),
+                    network: Network::Testnet,
+                    namespace: Namespace::new(1, 1),
+                    contract: NEAR_ACCOUNT_ID.to_string(),
+                });
+
+                let data = near_client.get(CryptoHash(near.hash)).await.unwrap().0.data;
+                String::from_utf8(data).unwrap()
+            }
             Some(Data::EigenDA(eigen_da)) => {
                 let request = RetrieveBlobRequest {
                     batch_header_hash: eigen_da.hash.clone().unwrap(),
@@ -246,9 +264,12 @@ impl MutationRoot {
                 });
 
                 let blobs = [Blob::new_v0(Namespace::new(0, 0), data)];
-
                 let response = near_client.submit(&blobs).await.unwrap();
-                response.0.as_bytes().try_into().unwrap()
+                let key = CryptoHash::from_str(&response.0).unwrap().0;
+                let mut map = api_context.map.write().await;
+                let v = Data::Near(NearObj { hash: key });
+                map.insert(key, v);
+                key
             }
             DA::EigenDA => {
                 let request = DisperseBlobRequest {

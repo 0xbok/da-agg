@@ -27,9 +27,15 @@ struct AvailObj {
 }
 
 #[derive(Clone)]
+struct NearObj {
+    hash: [u8; 32],
+}
+
+#[derive(Clone)]
 enum Data {
     EigenDA(EigenObj),
     Avail(AvailObj),
+    Near(NearObj),
 }
 
 struct ApiContext {
@@ -58,7 +64,7 @@ pub struct MyDisperser {}
 const EIGEN_SERVER: &str = "https://disperser-goerli.eigenda.xyz:443";
 const AVAIL_SERVER: &str = "wss://goldberg.avail.tools:443/ws";
 const AVAIL_SEED: &str = "hawk current pony echo horse belt drill ceiling film theory guitar mind";
-const NEAR_ACCOUNT_ID: &str = "ca6adc06c986a448b72ee502782899f41cd7c68f94fda2dbe2b0ce1741a4d213";
+const NEAR_ACCOUNT_ID: &str = "daaggregator.testnet";
 const NEAR_SECRET: &str = "ed25519:552x5ak2HHHMMNPC3oqTeR6SMrkPUsa2kBQPYtCm4Z7XfkHRTTgpKdyfXEgagnZeLoAbTyg7V7KXPSBw9wKLG7kv";
 
 /*
