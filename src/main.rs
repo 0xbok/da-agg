@@ -3,6 +3,7 @@ mod routes;
 
 use async_graphql::{EmptySubscription, Schema};
 use axum::{extract::Extension, http::StatusCode, response::Html, routing::get, Router, Server};
+use ethers::contract::abigen;
 
 use std::sync::Arc;
 use std::{collections::HashMap, fs};
@@ -12,30 +13,30 @@ use sha2::{Digest, Sha256};
 
 type SharedMap = Arc<RwLock<HashMap<[u8; 32], Data>>>;
 
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 struct EigenObj {
     status: String,
     request_id: Vec<u8>,
-    hash: Option<Vec<u8>>,
-    index: Option<u32>,
+    op_index: Option<[u8; 32]>,
+    // hash: Option<Vec<u8>>,
+    // index: Option<u32>,
 }
 
-#[derive(Clone)]
-struct AvailObj {
-    hash: Option<Vec<u8>>,
-    index: Option<u32>,
-}
+// #[derive(Clone)]
+// struct AvailObj {
+//     hash: Option<Vec<u8>>,
+//     index: Option<u32>,
+// }
 
-#[derive(Clone)]
-struct NearObj {
-    hash: [u8; 32],
-}
+// #[derive(Clone)]
+// struct NearObj {
+//     hash: [u8; 32],
+// }
 
-#[derive(Clone)]
+#[repr(u8)]
+#[derive(Clone, Debug)]
 enum Data {
     EigenDA(EigenObj),
-    Avail(AvailObj),
-    Near(NearObj),
 }
 
 struct ApiContext {
@@ -67,6 +68,11 @@ const AVAIL_SEED: &str = "hawk current pony echo horse belt drill ceiling film t
 const NEAR_ACCOUNT_ID: &str = "daaggregator.testnet";
 const NEAR_SECRET: &str = "ed25519:552x5ak2HHHMMNPC3oqTeR6SMrkPUsa2kBQPYtCm4Z7XfkHRTTgpKdyfXEgagnZeLoAbTyg7V7KXPSBw9wKLG7kv";
 
+const OPSEP_CONTRACT: &str = "0x47B115dE4D13c32c97bd59Db2dae4509cA596B72";
+const OPSEP_RPC: &str = "https://opt-sepolia.g.alchemy.com/v2/ATzASZn_CKT5Bz_hgG2zRHu5KXNV0b_S";
+const OPSET_SEED: &str = "0x496d9e930e4a133fc73b71314f8f7305be5d52eeb161f45e822bf07764b1a4be";
+
+abigen!(MapContract, "Map.json");
 /*
 --------------------  Access key info for account <daaggregator.testnet> ------------------
 
