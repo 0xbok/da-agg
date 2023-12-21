@@ -213,7 +213,7 @@ impl QueryRoot {
             Some(Data::Avail(avail)) => {
                 let client = build_client(AVAIL_SERVER, true).await.unwrap();
 
-                let hash: [u8; 32] = avail.hash.clone().unwrap().try_into().ok().unwrap();
+                let hash: [u8; 32] = avail.hash.clone().unwrap().try_into().unwrap();
 
                 let submitted_block = client
                     .rpc()

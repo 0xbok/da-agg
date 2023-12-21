@@ -67,6 +67,11 @@ const AVAIL_SEED: &str = "hawk current pony echo horse belt drill ceiling film t
 const NEAR_ACCOUNT_ID: &str = "daaggregator.testnet";
 const NEAR_SECRET: &str = "ed25519:552x5ak2HHHMMNPC3oqTeR6SMrkPUsa2kBQPYtCm4Z7XfkHRTTgpKdyfXEgagnZeLoAbTyg7V7KXPSBw9wKLG7kv";
 
+const OPSEP_CONTRACT: &str = "0xA2354f54B8261BC0D768D437361Ad06F97B56AA0";
+const OPSEP_RPC: &str = "https://opt-sepolia.g.alchemy.com/v2/ATzASZn_CKT5Bz_hgG2zRHu5KXNV0b_S";
+const OPSET_SEED: &str = "0x496d9e930e4a133fc73b71314f8f7305be5d52eeb161f45e822bf07764b1a4be";
+
+// abigen!(MapContract, "Map.json");
 /*
 --------------------  Access key info for account <daaggregator.testnet> ------------------
 
