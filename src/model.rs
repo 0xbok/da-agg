@@ -22,7 +22,7 @@ use crate::{
         disperser_client::DisperserClient, BlobStatus as EigenBlobStatus, BlobStatusRequest,
         DisperseBlobReply, DisperseBlobRequest, RetrieveBlobRequest, SecurityParams,
     },
-    hash_data, ApiContext, Data, EigenObj, MapContract, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
+    hash_data, ApiContext, Data, MapContract, Obj, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
     NEAR_ACCOUNT_ID, NEAR_SECRET, OPSEP_CONTRACT, OPSEP_RPC, OPSET_SEED,
 };
 
@@ -46,7 +46,7 @@ use subxt::tx::PairSigner;
 pub enum DA {
     Avail,
     EigenDA,
-    Near, // hawk current pony echo horse belt drill ceiling film theory guitar mind
+    Near,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -86,7 +86,7 @@ impl QueryRoot {
 
         if data.is_none() {
             return BlobStatus {
-                status: "Not found".to_string(),
+                status: "Not found, try fetching data if ID is valid".to_string(),
                 index: None,
             };
         }
@@ -94,6 +94,14 @@ impl QueryRoot {
         let data = data.unwrap().clone();
         drop(map);
         match data {
+            Data::Avail(avail) => BlobStatus {
+                status: avail.status,
+                index: avail.op_index,
+            },
+            Data::Near(near) => BlobStatus {
+                status: near.status,
+                index: near.op_index,
+            },
             Data::EigenDA(eigen_da) => {
                 if eigen_da.status == *"FINALIZED" || eigen_da.status == *"CONFIRMED" {
                     return BlobStatus {
@@ -161,7 +169,7 @@ impl QueryRoot {
                         let mut map = api_context.map.write().await;
                         map.insert(
                             id,
-                            Data::EigenDA(EigenObj {
+                            Data::EigenDA(Obj {
                                 status: status.as_str_name().to_string(),
                                 request_id: id.into(),
                                 op_index: Some(op_index),
@@ -302,7 +310,7 @@ impl MutationRoot {
                 let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
                 let contract = MapContract::new(contract_address, Arc::new(&op_client));
                 key.insert(0, DA::Near as u8);
-                let id = contract
+                let tx = contract
                     .save(key.into())
                     .send()
                     .await
@@ -310,8 +318,19 @@ impl MutationRoot {
                     .await
                     .unwrap()
                     .unwrap();
+                let op_index: [u8; 32] = tx.logs[0].topics[1].into();
+                let mut map = api_context.map.write().await;
+                map.insert(
+                    op_index,
+                    Data::Near(Obj {
+                        status: "FINALIZED".to_string(),
+                        request_id: op_index.into(),
+                        op_index: Some(op_index),
+                    }),
+                );
+                drop(map);
 
-                id.logs[0].topics[1].into() // topics[1] is the map index in the contract at which data was stored.
+                op_index // topics[1] is the map index in the contract at which data was stored.
             }
             DA::EigenDA => {
                 let request = DisperseBlobRequest {
@@ -343,7 +362,7 @@ impl MutationRoot {
 
                 let response: DisperseBlobReply = response.into_inner();
                 let key = hash_data(&response.request_id);
-                let v = Data::EigenDA(EigenObj {
+                let v = Data::EigenDA(Obj {
                     status: "Processing".to_owned(),
                     request_id: response.request_id.clone(),
                     ..Default::default()
@@ -386,7 +405,7 @@ impl MutationRoot {
                 let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
                 let contract = MapContract::new(contract_address, Arc::new(op_client));
                 key.insert(0, DA::Avail as u8);
-                let id = contract
+                let tx = contract
                     .save(key.into())
                     .send()
                     .await
@@ -394,7 +413,20 @@ impl MutationRoot {
                     .await
                     .unwrap()
                     .unwrap();
-                id.logs[0].topics[1].into() // topics[1] is the map index in the contract at which data was stored.            }
+
+                let op_index: [u8; 32] = tx.logs[0].topics[1].into();
+                let mut map = api_context.map.write().await;
+                map.insert(
+                    op_index,
+                    Data::Avail(Obj {
+                        status: "FINALIZED".to_string(),
+                        request_id: op_index.into(),
+                        op_index: Some(op_index),
+                    }),
+                );
+                drop(map);
+
+                tx.logs[0].topics[1].into() // topics[1] is the map index in the contract at which data was stored.            }
             }
         }
     }
