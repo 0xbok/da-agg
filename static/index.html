@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>GraphQL Frontend</title>
+    <title>DA Router</title>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 
     <style>
@@ -69,49 +69,46 @@
 
 <body>
     Hello! Store data on Avail, EigenDA or NearDA. Please bear with some guiding instructions.
-    <ul>
-        <li>Blob IDs are stored in an in-memory object on the backend for quick iteration.
-    </ul>
 
     <div class="form-section">
         <h2>Store Blob</h2>
         Enter any message in data and click Store after choosing the DA layer.
         <ul>
-            <li>EigenDA will quickly respond due to async processing.
-            <li>Avail and Near request will take time as it'll wait for it to be included in a block.
+            <li>Avail and Near request take time as it'll wait for it to be included in a block.
         </ul>
         <label for="dataInput">Data:</label>
         <input type="text" id="dataInput">
         <label for="daSelect">DA:</label>
         <select id="daSelect">
             <option value="AVAIL">AVAIL</option>
-            <option value="EIGEN_DA">EIGEN_DA</option>
+            <option value="EIGEN_DA">EIGEN</option>
             <option value="NEAR">NEAR</option>
         </select>
         <button onclick="storeBlob()">Store</button>
-        <button class="copy-button" onclick="copyToClipboard('storeResult')">Copy ID</button>
+        <button class="copy-button" onclick="copyToClipboard('storeResult')">Copy request ID</button>
         <div id="storeResult" class="result"></div>
     </div>
 
     <div class="form-section">
         <h2>Get Blob Status</h2>
-        Store will respond back with an application-generated ID. Copy the ID using Copy button above, use it to get
+        Store will respond back with a request ID. Copy the ID using Copy button above, use it to get
         blob status.
         <br />Application automatically routes the request to the correct DA layer.
         <ul>
             <li>EigenDA will show "PROCESSING" for some time before finalizing.
             <li>Avail and Near shows finalized because Store responds only when data is stored.
-            <li>Once status is "FINALIZED", move to the next API.
+            <li>Once status is "FINALIZED", copy the final ID and move to the next API.
         </ul>
         <label for="statusIdInput">ID:</label>
         <input type="text" id="statusIdInput">
         <button onclick="getBlobStatus()">Get Status</button>
+        <button class="copy-button" onclick="copyfinalID('statusResult')">Copy ID</button>
         <div id="statusResult" class="result"></div>
     </div>
 
     <div class="form-section">
         <h2>Get Blob Data</h2>
-        Enter the same ID to get blob data.
+        Enter the final ID to get blob data.
         <ul>
             <li>If it's not finalized, it will return
                 error or fail silently.
@@ -153,6 +150,23 @@
 
             const result = await fetchGraphQL(query, { data, da });
             document.getElementById('storeResult').textContent = JSON.stringify(result.data.storeBlob);
+        }
+
+        function copyfinalID(elementId) {
+            let text = document.getElementById(elementId).textContent;
+            try {
+                var parsed = JSON.parse(text);
+                parsed = parsed['index'];
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    text = parsed.join(", "); // Join array elements with a comma if multiple IDs
+                }
+            } catch (err) {
+                console.error('Error parsing text for clipboard: ', err);
+            }
+            navigator.clipboard.writeText(text).then(() => {
+            }).catch(err => {
+                console.error('Error in copying text: ', err);
+            });
         }
 
         function copyToClipboard(elementId) {
