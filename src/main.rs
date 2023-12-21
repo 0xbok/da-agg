@@ -13,12 +13,13 @@ use sha2::{Digest, Sha256};
 
 type SharedMap = Arc<RwLock<HashMap<[u8; 32], Data>>>;
 
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 struct EigenObj {
     status: String,
     request_id: Vec<u8>,
-    hash: Option<Vec<u8>>,
-    index: Option<u32>,
+    op_index: Option<[u8; 32]>,
+    // hash: Option<Vec<u8>>,
+    // index: Option<u32>,
 }
 
 // #[derive(Clone)]
@@ -33,7 +34,7 @@ struct EigenObj {
 // }
 
 #[repr(u8)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Data {
     EigenDA(EigenObj),
 }
