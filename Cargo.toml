@@ -24,6 +24,10 @@ subxt = { version = "0.29" }
 # Near
 near-da-rpc = { git = "https://github.com/near/rollup-data-availability.git", rev = "557485e3140342617e7c6f110458a6ca63224d20" }
 
+# Celestia
+celestia-rpc = { git = "https://github.com/eigerco/lumina.git", rev = "129272e8d926b4c7badf27a26dea915323dd6489" }
+celestia-types = { git = "https://github.com/eigerco/lumina.git", rev = "129272e8d926b4c7badf27a26dea915323dd6489" }
+
 ethers = "2.0.11"
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
