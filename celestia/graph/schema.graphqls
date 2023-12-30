@@ -1,0 +1,16 @@
+type Query {
+    read(commitment: String!, height: String!): ReadResponse
+}
+
+type Mutation {
+    submit(data: String!, namespace: String!, authToken: String!): SubmitResponse
+}
+
+type SubmitResponse {
+    commitment: String
+    height: String
+}
+
+type ReadResponse {
+    data: String
+}
