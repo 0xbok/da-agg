@@ -29,6 +29,7 @@ celestia-rpc = { git = "https://github.com/eigerco/lumina.git", rev = "129272e8d
 celestia-types = { git = "https://github.com/eigerco/lumina.git", rev = "129272e8d926b4c7badf27a26dea915323dd6489" }
 
 ethers = "2.0.11"
+tokio-tungstenite = "0.21.0"
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
 [patch.crates-io]

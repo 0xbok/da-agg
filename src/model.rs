@@ -2,7 +2,9 @@ use std::{str::FromStr, sync::Arc};
 
 use async_graphql::{Context, EmptySubscription, Enum, Object, Schema};
 use celestia_rpc::{BlobClient, Client as Tia};
-use celestia_types::{blob::SubmitOptions, nmt::Namespace, Blob};
+use celestia_types::{
+    blob::SubmitOptions, nmt::Namespace as TiaNamespace, Blob as TiaBlob, Commitment,
+};
 use ethers::{
     middleware::SignerMiddleware,
     providers::{Http, Provider},
@@ -27,6 +29,7 @@ use crate::{
     hash_data, ApiContext, Data, MapContract, Obj, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
     NEAR_ACCOUNT_ID, NEAR_SECRET, OPSEP_CONTRACT, OPSEP_RPC, OPSET_SEED,
 };
+use crate::{TIA_AUTH_TOKEN, TIA_SERVER};
 
 use avail_subxt::{
     api::{
@@ -49,6 +52,7 @@ pub enum DA {
     Avail,
     EigenDA,
     Near,
+    Celestia,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -96,6 +100,10 @@ impl QueryRoot {
         let data = data.unwrap().clone();
         drop(map);
         match data {
+            Data::Celestia(tia) => BlobStatus {
+                status: tia.status,
+                index: tia.op_index,
+            },
             Data::Avail(avail) => BlobStatus {
                 status: avail.status,
                 index: avail.op_index,
@@ -203,7 +211,21 @@ impl QueryRoot {
         let data = contract.get(id.into()).call().await.unwrap();
         let ptr: Vec<u8> = data.0.into();
 
-        if ptr[0] == DA::Near as u8 {
+        if ptr[0] == DA::Celestia as u8 {
+            let height: [u8; 8] = ptr[1..9].try_into().unwrap();
+            let commitment: [u8; 32] = ptr[9..].try_into().unwrap();
+
+            let client = Tia::new(TIA_SERVER, Some(TIA_AUTH_TOKEN)).await.unwrap();
+            let blob = client
+                .blob_get(
+                    u64::from_le_bytes(height),
+                    TiaNamespace::const_v0(one_bytes_array()),
+                    Commitment(commitment),
+                )
+                .await
+                .unwrap();
+            String::from_utf8(blob.data).unwrap()
+        } else if ptr[0] == DA::Near as u8 {
             let cryptohash: [u8; 32] = ptr[1..33].try_into().unwrap();
             let near_client = Client::new(&Config {
                 key: KeyType::SecretKey(NEAR_ACCOUNT_ID.to_string(), NEAR_SECRET.to_string()),
@@ -285,8 +307,8 @@ impl QueryRoot {
 
 pub(crate) struct MutationRoot;
 
-fn zero_bytes_array<const N: usize>() -> [u8; N] {
-    [0; N]
+fn one_bytes_array<const N: usize>() -> [u8; N] {
+    [1; N]
 }
 
 #[Object]
@@ -295,154 +317,187 @@ impl MutationRoot {
         let data = data.into_bytes();
         let api_context = ctx.data_unchecked::<ApiContext>();
 
-        let blob = [Blob::new(Namespace::const_v0(zero_bytes_array()), data.clone()).unwrap()];
-        let client = Tia::new(TIA_SERVER, None).await.unwrap();
-        let req = client
-            .blob_submit(&blob, SubmitOptions::default())
-            .await
-            .unwrap();
+        match da {
+            DA::Celestia => {
+                let blob = [
+                    TiaBlob::new(TiaNamespace::const_v0(one_bytes_array()), data.clone()).unwrap(),
+                ];
+                let client = Tia::new(TIA_SERVER, Some(TIA_AUTH_TOKEN)).await.unwrap();
+                let height = client
+                    .blob_submit(&blob, SubmitOptions::default())
+                    .await
+                    .unwrap();
 
-        dbg!(&req, &blob);
+                let mut key = concatenate_slices(&height.to_le_bytes(), &blob[0].commitment.0);
+                key.insert(0, DA::Celestia as u8);
 
-        // match da {
-        //     DA::Near => {
-        //         let near_client = Client::new(&Config {
-        //             key: KeyType::SecretKey(NEAR_ACCOUNT_ID.to_string(), NEAR_SECRET.to_string()),
-        //             network: Network::Testnet,
-        //             namespace: Namespace::new(1, 1),
-        //             contract: NEAR_ACCOUNT_ID.to_string(),
-        //         });
+                let owner = OPSET_SEED.parse::<LocalWallet>().unwrap();
+                let op_provider = Provider::<Http>::try_from(OPSEP_RPC).unwrap();
 
-        //         let blobs = [Blob::new_v0(Namespace::new(0, 0), data)];
-        //         let response = near_client.submit(&blobs).await.unwrap();
-        //         let mut key: Vec<u8> = CryptoHash::from_str(&response.0).unwrap().0.into();
+                let op_client =
+                    SignerMiddleware::new(op_provider, owner.with_chain_id(11155420u64));
+                let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
+                let contract = MapContract::new(contract_address, Arc::new(&op_client));
+                let tx = contract
+                    .save(key.into())
+                    .send()
+                    .await
+                    .unwrap()
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let op_index: [u8; 32] = tx.logs[0].topics[1].into();
+                let mut map = api_context.map.write().await;
+                map.insert(
+                    op_index,
+                    Data::Celestia(Obj {
+                        status: "FINALIZED".to_string(),
+                        request_id: op_index.into(),
+                        op_index: Some(op_index),
+                    }),
+                );
+                drop(map);
 
-        //         let owner = OPSET_SEED.parse::<LocalWallet>().unwrap();
-        //         let op_provider = Provider::<Http>::try_from(OPSEP_RPC).unwrap();
+                op_index
+            }
+            DA::Near => {
+                let near_client = Client::new(&Config {
+                    key: KeyType::SecretKey(NEAR_ACCOUNT_ID.to_string(), NEAR_SECRET.to_string()),
+                    network: Network::Testnet,
+                    namespace: Namespace::new(1, 1),
+                    contract: NEAR_ACCOUNT_ID.to_string(),
+                });
 
-        //         let op_client =
-        //             SignerMiddleware::new(op_provider, owner.with_chain_id(11155420u64));
-        //         let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
-        //         let contract = MapContract::new(contract_address, Arc::new(&op_client));
-        //         key.insert(0, DA::Near as u8);
-        //         let tx = contract
-        //             .save(key.into())
-        //             .send()
-        //             .await
-        //             .unwrap()
-        //             .await
-        //             .unwrap()
-        //             .unwrap();
-        //         let op_index: [u8; 32] = tx.logs[0].topics[1].into();
-        //         let mut map = api_context.map.write().await;
-        //         map.insert(
-        //             op_index,
-        //             Data::Near(Obj {
-        //                 status: "FINALIZED".to_string(),
-        //                 request_id: op_index.into(),
-        //                 op_index: Some(op_index),
-        //             }),
-        //         );
-        //         drop(map);
+                let blobs = [Blob::new_v0(Namespace::new(0, 0), data)];
+                let response = near_client.submit(&blobs).await.unwrap();
+                let mut key: Vec<u8> = CryptoHash::from_str(&response.0).unwrap().0.into();
 
-        //         op_index // topics[1] is the map index in the contract at which data was stored.
-        //     }
-        //     DA::EigenDA => {
-        //         let request = DisperseBlobRequest {
-        //             data,
-        //             security_params: vec![SecurityParams {
-        //                 quorum_id: 0,
-        //                 adversary_threshold: 25,
-        //                 quorum_threshold: 50,
-        //             }],
-        //         };
+                let owner = OPSET_SEED.parse::<LocalWallet>().unwrap();
+                let op_provider = Provider::<Http>::try_from(OPSEP_RPC).unwrap();
 
-        //         let mut client = DisperserClient::connect(EIGEN_SERVER)
-        //             .await
-        //             .map_err(|e| {
-        //                 Status::internal(format!("Failed to connect to external service: {}", e))
-        //             })
-        //             .unwrap();
+                let op_client =
+                    SignerMiddleware::new(op_provider, owner.with_chain_id(11155420u64));
+                let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
+                let contract = MapContract::new(contract_address, Arc::new(&op_client));
+                key.insert(0, DA::Near as u8);
+                let tx = contract
+                    .save(key.into())
+                    .send()
+                    .await
+                    .unwrap()
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let op_index: [u8; 32] = tx.logs[0].topics[1].into();
+                let mut map = api_context.map.write().await;
+                map.insert(
+                    op_index,
+                    Data::Near(Obj {
+                        status: "FINALIZED".to_string(),
+                        request_id: op_index.into(),
+                        op_index: Some(op_index),
+                    }),
+                );
+                drop(map);
 
-        //         let response = client
-        //             .disperse_blob(request)
-        //             .await
-        //             .map_err(|e| {
-        //                 Status::internal(format!(
-        //                     "Failed to send request to external service: {}",
-        //                     e
-        //                 ))
-        //             })
-        //             .unwrap();
+                op_index // topics[1] is the map index in the contract at which data was stored.
+            }
+            DA::EigenDA => {
+                let request = DisperseBlobRequest {
+                    data,
+                    security_params: vec![SecurityParams {
+                        quorum_id: 0,
+                        adversary_threshold: 25,
+                        quorum_threshold: 50,
+                    }],
+                };
 
-        //         let response: DisperseBlobReply = response.into_inner();
-        //         let key = hash_data(&response.request_id);
-        //         let v = Data::EigenDA(Obj {
-        //             status: "Processing".to_owned(),
-        //             request_id: response.request_id.clone(),
-        //             ..Default::default()
-        //         });
-        //         let mut map = api_context.map.write().await;
-        //         map.insert(key, v);
-        //         drop(map);
-        //         key
-        //     }
-        //     DA::Avail => {
-        //         let client = build_client(AVAIL_SERVER, true).await.unwrap();
-        //         let pair = Pair::from_string_with_seed(AVAIL_SEED, None).unwrap();
-        //         let signer = PairSigner::new(pair.0);
+                let mut client = DisperserClient::connect(EIGEN_SERVER)
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to connect to external service: {}", e))
+                    })
+                    .unwrap();
 
-        //         let data_transfer = api::tx()
-        //             .data_availability()
-        //             .submit_data(BoundedVec(data.clone()));
-        //         let extrinsic_params = AvailExtrinsicParams::new_with_app_id(1.into());
+                let response = client
+                    .disperse_blob(request)
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!(
+                            "Failed to send request to external service: {}",
+                            e
+                        ))
+                    })
+                    .unwrap();
 
-        //         let h = client
-        //             .tx()
-        //             .sign_and_submit_then_watch(&data_transfer, &signer, extrinsic_params)
-        //             .await
-        //             .unwrap()
-        //             .wait_for_finalized_success()
-        //             .await
-        //             .unwrap();
+                let response: DisperseBlobReply = response.into_inner();
+                let key = hash_data(&response.request_id);
+                let v = Data::EigenDA(Obj {
+                    status: "Processing".to_owned(),
+                    request_id: response.request_id.clone(),
+                    ..Default::default()
+                });
+                let mut map = api_context.map.write().await;
+                map.insert(key, v);
+                drop(map);
+                key
+            }
+            DA::Avail => {
+                let client = build_client(AVAIL_SERVER, true).await.unwrap();
+                let pair = Pair::from_string_with_seed(AVAIL_SEED, None).unwrap();
+                let signer = PairSigner::new(pair.0);
 
-        //         // let mut map = api_context.map.write().await;
-        //         let block_hash = h.block_hash();
-        //         let hash = block_hash.as_bytes();
-        //         let index = h.extrinsic_index().to_le_bytes();
-        //         let mut key = concatenate_slices(hash, &index);
+                let data_transfer = api::tx()
+                    .data_availability()
+                    .submit_data(BoundedVec(data.clone()));
+                let extrinsic_params = AvailExtrinsicParams::new_with_app_id(1.into());
 
-        //         let owner = OPSET_SEED.parse::<LocalWallet>().unwrap();
-        //         let op_provider = Provider::<Http>::try_from(OPSEP_RPC).unwrap();
+                let h = client
+                    .tx()
+                    .sign_and_submit_then_watch(&data_transfer, &signer, extrinsic_params)
+                    .await
+                    .unwrap()
+                    .wait_for_finalized_success()
+                    .await
+                    .unwrap();
 
-        //         let op_client =
-        //             SignerMiddleware::new(op_provider, owner.with_chain_id(11155420u64));
-        //         let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
-        //         let contract = MapContract::new(contract_address, Arc::new(op_client));
-        //         key.insert(0, DA::Avail as u8);
-        //         let tx = contract
-        //             .save(key.into())
-        //             .send()
-        //             .await
-        //             .unwrap()
-        //             .await
-        //             .unwrap()
-        //             .unwrap();
+                // let mut map = api_context.map.write().await;
+                let block_hash = h.block_hash();
+                let hash = block_hash.as_bytes();
+                let index = h.extrinsic_index().to_le_bytes();
+                let mut key = concatenate_slices(hash, &index);
 
-        //         let op_index: [u8; 32] = tx.logs[0].topics[1].into();
-        //         let mut map = api_context.map.write().await;
-        //         map.insert(
-        //             op_index,
-        //             Data::Avail(Obj {
-        //                 status: "FINALIZED".to_string(),
-        //                 request_id: op_index.into(),
-        //                 op_index: Some(op_index),
-        //             }),
-        //         );
-        //         drop(map);
+                let owner = OPSET_SEED.parse::<LocalWallet>().unwrap();
+                let op_provider = Provider::<Http>::try_from(OPSEP_RPC).unwrap();
 
-        //         tx.logs[0].topics[1].into() // topics[1] is the map index in the contract at which data was stored.            }
-        //     }
-        // }
+                let op_client =
+                    SignerMiddleware::new(op_provider, owner.with_chain_id(11155420u64));
+                let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
+                let contract = MapContract::new(contract_address, Arc::new(op_client));
+                key.insert(0, DA::Avail as u8);
+                let tx = contract
+                    .save(key.into())
+                    .send()
+                    .await
+                    .unwrap()
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+                let op_index: [u8; 32] = tx.logs[0].topics[1].into();
+                let mut map = api_context.map.write().await;
+                map.insert(
+                    op_index,
+                    Data::Avail(Obj {
+                        status: "FINALIZED".to_string(),
+                        request_id: op_index.into(),
+                        op_index: Some(op_index),
+                    }),
+                );
+                drop(map);
+
+                tx.logs[0].topics[1].into() // topics[1] is the map index in the contract at which data was stored.            }
+            }
+        }
     }
 }
