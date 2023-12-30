@@ -1,6 +1,10 @@
 use std::{str::FromStr, sync::Arc};
 
 use async_graphql::{Context, EmptySubscription, Enum, Object, Schema};
+use celestia_rpc::{BlobClient, Client as Tia};
+use celestia_types::{
+    blob::SubmitOptions, nmt::Namespace as TiaNamespace, Blob as TiaBlob, Commitment,
+};
 use ethers::{
     middleware::SignerMiddleware,
     providers::{Http, Provider},
@@ -25,6 +29,7 @@ use crate::{
     hash_data, ApiContext, Data, MapContract, Obj, AVAIL_SEED, AVAIL_SERVER, EIGEN_SERVER,
     NEAR_ACCOUNT_ID, NEAR_SECRET, OPSEP_CONTRACT, OPSEP_RPC, OPSET_SEED,
 };
+use crate::{TIA_AUTH_TOKEN, TIA_SERVER};
 
 use avail_subxt::{
     api::{
@@ -47,6 +52,7 @@ pub enum DA {
     Avail,
     EigenDA,
     Near,
+    Celestia,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -94,6 +100,10 @@ impl QueryRoot {
         let data = data.unwrap().clone();
         drop(map);
         match data {
+            Data::Celestia(tia) => BlobStatus {
+                status: tia.status,
+                index: tia.op_index,
+            },
             Data::Avail(avail) => BlobStatus {
                 status: avail.status,
                 index: avail.op_index,
@@ -201,7 +211,21 @@ impl QueryRoot {
         let data = contract.get(id.into()).call().await.unwrap();
         let ptr: Vec<u8> = data.0.into();
 
-        if ptr[0] == DA::Near as u8 {
+        if ptr[0] == DA::Celestia as u8 {
+            let height: [u8; 8] = ptr[1..9].try_into().unwrap();
+            let commitment: [u8; 32] = ptr[9..].try_into().unwrap();
+
+            let client = Tia::new(TIA_SERVER, Some(TIA_AUTH_TOKEN)).await.unwrap();
+            let blob = client
+                .blob_get(
+                    u64::from_le_bytes(height),
+                    TiaNamespace::const_v0(one_bytes_array()),
+                    Commitment(commitment),
+                )
+                .await
+                .unwrap();
+            String::from_utf8(blob.data).unwrap()
+        } else if ptr[0] == DA::Near as u8 {
             let cryptohash: [u8; 32] = ptr[1..33].try_into().unwrap();
             let near_client = Client::new(&Config {
                 key: KeyType::SecretKey(NEAR_ACCOUNT_ID.to_string(), NEAR_SECRET.to_string()),
@@ -283,6 +307,10 @@ impl QueryRoot {
 
 pub(crate) struct MutationRoot;
 
+fn one_bytes_array<const N: usize>() -> [u8; N] {
+    [1; N]
+}
+
 #[Object]
 impl MutationRoot {
     async fn store_blob(&self, ctx: &Context<'_>, data: String, da: DA) -> [u8; 32] {
@@ -290,6 +318,48 @@ impl MutationRoot {
         let api_context = ctx.data_unchecked::<ApiContext>();
 
         match da {
+            DA::Celestia => {
+                let blob = [
+                    TiaBlob::new(TiaNamespace::const_v0(one_bytes_array()), data.clone()).unwrap(),
+                ];
+                let client = Tia::new(TIA_SERVER, Some(TIA_AUTH_TOKEN)).await.unwrap();
+                let height = client
+                    .blob_submit(&blob, SubmitOptions::default())
+                    .await
+                    .unwrap();
+
+                let mut key = concatenate_slices(&height.to_le_bytes(), &blob[0].commitment.0);
+                key.insert(0, DA::Celestia as u8);
+
+                let owner = OPSET_SEED.parse::<LocalWallet>().unwrap();
+                let op_provider = Provider::<Http>::try_from(OPSEP_RPC).unwrap();
+
+                let op_client =
+                    SignerMiddleware::new(op_provider, owner.with_chain_id(11155420u64));
+                let contract_address = OPSEP_CONTRACT.parse::<Address>().unwrap();
+                let contract = MapContract::new(contract_address, Arc::new(&op_client));
+                let tx = contract
+                    .save(key.into())
+                    .send()
+                    .await
+                    .unwrap()
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let op_index: [u8; 32] = tx.logs[0].topics[1].into();
+                let mut map = api_context.map.write().await;
+                map.insert(
+                    op_index,
+                    Data::Celestia(Obj {
+                        status: "FINALIZED".to_string(),
+                        request_id: op_index.into(),
+                        op_index: Some(op_index),
+                    }),
+                );
+                drop(map);
+
+                op_index
+            }
             DA::Near => {
                 let near_client = Client::new(&Config {
                     key: KeyType::SecretKey(NEAR_ACCOUNT_ID.to_string(), NEAR_SECRET.to_string()),

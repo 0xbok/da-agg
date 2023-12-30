@@ -2,7 +2,7 @@
 FROM rust:1.74-slim as builder
 
 # Install protobuf
-RUN apt-get update && apt-get install -y protobuf-compiler
+RUN apt-get update && apt-get install -y protobuf-compiler libssl-dev pkg-config
 
 # Create a new empty shell project
 RUN USER=root cargo new --bin da
@@ -20,7 +20,7 @@ RUN cargo build --release
 
 # Runtime stage
 FROM rust:1.74-slim
-RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y protobuf-compiler openssl libssl-dev && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from the builder stage
 COPY --from=builder /da/target/release/da /usr/local/bin/da

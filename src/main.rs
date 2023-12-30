@@ -39,6 +39,7 @@ enum Data {
     Avail(Obj),
     EigenDA(Obj),
     Near(Obj),
+    Celestia(Obj),
 }
 
 struct ApiContext {
@@ -69,6 +70,9 @@ const AVAIL_SERVER: &str = "wss://goldberg.avail.tools:443/ws";
 const AVAIL_SEED: &str = "hawk current pony echo horse belt drill ceiling film theory guitar mind";
 const NEAR_ACCOUNT_ID: &str = "daaggregator.testnet";
 const NEAR_SECRET: &str = "ed25519:552x5ak2HHHMMNPC3oqTeR6SMrkPUsa2kBQPYtCm4Z7XfkHRTTgpKdyfXEgagnZeLoAbTyg7V7KXPSBw9wKLG7kv";
+
+const TIA_SERVER: &str = "http://127.0.0.1:26658";
+const TIA_AUTH_TOKEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJwdWJsaWMiLCJyZWFkIiwid3JpdGUiLCJhZG1pbiJdfQ.45qtt1aKHMJZl5BYG2gIMf-NI6AGa_cZvAF08H7lteg";
 
 const OPSEP_CONTRACT: &str = "0x7334e5F4f1f57f097721D66142cFe17eD10Fbef1";
 const OPSEP_RPC: &str = "https://opt-sepolia.g.alchemy.com/v2/ATzASZn_CKT5Bz_hgG2zRHu5KXNV0b_S";
