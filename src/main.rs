@@ -2,8 +2,11 @@ mod model;
 mod routes;
 
 use async_graphql::{EmptySubscription, Schema};
-use axum::{extract::Extension, http::StatusCode, response::Html, routing::get, Router, Server};
+use axum::{extract::Extension, http::StatusCode, response::Html, routing::get, Router};
 use ethers::contract::abigen;
+
+use axum_server::tls_rustls::RustlsConfig;
+use std::net::SocketAddr;
 
 use std::sync::Arc;
 use std::{collections::HashMap, fs};
@@ -72,7 +75,7 @@ const NEAR_ACCOUNT_ID: &str = "daaggregator.testnet";
 const NEAR_SECRET: &str = "ed25519:552x5ak2HHHMMNPC3oqTeR6SMrkPUsa2kBQPYtCm4Z7XfkHRTTgpKdyfXEgagnZeLoAbTyg7V7KXPSBw9wKLG7kv";
 
 const TIA_SERVER: &str = "http://127.0.0.1:26658";
-const TIA_AUTH_TOKEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJwdWJsaWMiLCJyZWFkIiwid3JpdGUiLCJhZG1pbiJdfQ.45qtt1aKHMJZl5BYG2gIMf-NI6AGa_cZvAF08H7lteg";
+const TIA_AUTH_TOKEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJwdWJsaWMiLCJyZWFkIiwid3JpdGUiLCJhZG1pbiJdfQ.dqyfIiz1fwFzxqRvBDfK_-wkGZ_ikhS4Jg2CgWC8lv0";
 
 const OPSEP_CONTRACT: &str = "0x7334e5F4f1f57f097721D66142cFe17eD10Fbef1";
 const OPSEP_RPC: &str = "https://opt-sepolia.g.alchemy.com/v2/ATzASZn_CKT5Bz_hgG2zRHu5KXNV0b_S";
@@ -110,7 +113,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health))
         .layer(Extension(schema));
 
-    Server::bind(&"0.0.0.0:8000".parse().unwrap())
+    let config = RustlsConfig::from_pem_file(
+        "/etc/letsencrypt/live/dagg.hopto.org/fullchain.pem",
+        "/etc/letsencrypt/live/dagg.hopto.org/privkey.pem",
+    )
+    .await
+    .unwrap();
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], 443));
+    axum_server::bind_rustls(addr, config)
         .serve(app.into_make_service())
         .await
         .unwrap();

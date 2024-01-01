@@ -30,6 +30,8 @@ celestia-types = { git = "https://github.com/eigerco/lumina.git", rev = "129272e
 
 ethers = "2.0.11"
 tokio-tungstenite = "0.21.0"
+rustls-pemfile = "2.0.0"
+axum-server = { version = "0.5.0", features = ["rustls", "tls-rustls"] }
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
 [patch.crates-io]
